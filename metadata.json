@@ -1,0 +1,5 @@
+{
+  "name": "Reptile Cursor Animation",
+  "description": "An interactive, animated skeletal reptile cursor that replaces the default mouse pointer, rendered on an HTML5 Canvas with fluid, physics-based motion.",
+  "requestFramePermissions": []
+}
