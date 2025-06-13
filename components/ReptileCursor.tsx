@@ -3,7 +3,6 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Point, Segment } from '../types';
 
 // --- Configuration & Constants ---
-// const REPTILE_SPEED = 3.5; // No longer used for head, head is instant. Retained for context.
 const SEGMENT_COUNT = 45;
 const BASE_SEGMENT_LENGTH = 9;
 
@@ -14,7 +13,7 @@ const LEG_SEGMENT_GAP = 4;
 const THIGH_LENGTH = 22;
 const CALF_LENGTH = 20;
 const FOOT_LENGTH = 8;
-const LEG_WALK_PHASE_SPEED = 0.15; // Speed of the basic leg stepping rhythm
+const LEG_WALK_PHASE_SPEED = 0.15;
 
 // Body features
 const NECK_TAPER_SEGMENTS = 10;
@@ -36,23 +35,23 @@ const TAIL_BONE_START_INDEX = SEGMENT_COUNT - TAIL_TAPER_SEGMENTS;
 const TAIL_BONE_MAX_LENGTH = 10;
 
 // Undulation properties
-const UNDULATION_AMPLITUDE = 6; // Max sideways displacement in pixels
-const UNDULATION_FREQUENCY = 0.4; // How many waves fit along the body (approx)
-const UNDULATION_WAVE_SPEED = 0.08; // How fast the wave travels down the body
+const UNDULATION_AMPLITUDE = 3.0; // Reduced for more subtle slithering
+const UNDULATION_FREQUENCY = 0.4; 
+const UNDULATION_WAVE_SPEED = 0.08; 
+const UNDULATION_SETTLE_SPEED = 0.15; // How quickly undulation fades/activates
 
 const ReptileCursor: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameIdRef = useRef<number | undefined>(undefined);
   
   const mousePositionRef = useRef<Point>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-  const prevMousePositionRef = useRef<Point>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
   const segments = useRef<Segment[]>([]).current; 
-  const headSpeed = useRef<number>(0); // Now measures actual distance head moved
-  const walkPhase = useRef<number>(0); // For basic leg stepping rhythm
-  const undulationTimeRef = useRef<number>(0); // Drives the undulation wave
+  const headSpeed = useRef<number>(0); 
+  const walkPhase = useRef<number>(0); 
+  const undulationTimeRef = useRef<number>(0);
+  const currentUndulationMagnitudeFactorRef = useRef<number>(0); // 0 when still, 1 when moving
 
-  // Holds the segments array for rendering, updated once per frame after all calculations
   const [drawableSegmentsForRender, setDrawableSegmentsForRender] = useState<Segment[]>([]);
 
   const createReptile = useCallback(() => {
@@ -70,14 +69,14 @@ const ReptileCursor: React.FC = () => {
       width = Math.max(1, width);
 
       segments.push({
-        x: startX - i * BASE_SEGMENT_LENGTH, // Initialize in a straight line
+        x: startX - i * BASE_SEGMENT_LENGTH, 
         y: startY,
         angle: 0,
         length: BASE_SEGMENT_LENGTH,
         width: width,
       });
     }
-    setDrawableSegmentsForRender([...segments]); // Initial render state
+    setDrawableSegmentsForRender([...segments]); 
   }, [segments]);
 
   useEffect(() => { 
@@ -85,7 +84,6 @@ const ReptileCursor: React.FC = () => {
       mousePositionRef.current = { x: event.clientX, y: event.clientY };
     };
     mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    prevMousePositionRef.current = { ...mousePositionRef.current };
     createReptile();
     window.addEventListener('mousemove', handleMouseMove);
     
@@ -95,8 +93,7 @@ const ReptileCursor: React.FC = () => {
         canvasRef.current.height = window.innerHeight;
       }
       mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-      prevMousePositionRef.current = { ...mousePositionRef.current };
-      createReptile(); // Recreate reptile on resize
+      createReptile(); 
     };
     window.addEventListener('resize', handleResize);
 
@@ -114,12 +111,9 @@ const ReptileCursor: React.FC = () => {
     const updateReptileLogic = () => {
       if (segments.length === 0) return;
 
-      undulationTimeRef.current += UNDULATION_WAVE_SPEED;
-
       const target = mousePositionRef.current;
       const headSegment = segments[0];
 
-      // 1. Head: Unbreakable Leash
       const prevHeadX = headSegment.x;
       const prevHeadY = headSegment.y;
 
@@ -130,35 +124,49 @@ const ReptileCursor: React.FC = () => {
       const dyHeadMove = headSegment.y - prevHeadY;
       headSpeed.current = Math.hypot(dxHeadMove, dyHeadMove);
 
-      if (headSpeed.current > 0.1) { // Only update angle if moved significantly
+      if (headSpeed.current > 0.1) { 
         headSegment.angle = Math.atan2(dyHeadMove, dxHeadMove);
       }
-      // If no movement, angle remains from previous frame.
 
-      // Advance walk phase if reptile is moving
-      if (headSpeed.current > 0.5) { 
-        walkPhase.current += LEG_WALK_PHASE_SPEED * (headSpeed.current / 5); // Scale walk phase by speed
+      // Update undulation magnitude factor (controls if reptile is "actively" undulating)
+      const targetUndulationMagnitude = headSpeed.current > 0.5 ? 1.0 : 0.0;
+      currentUndulationMagnitudeFactorRef.current += 
+        (targetUndulationMagnitude - currentUndulationMagnitudeFactorRef.current) * UNDULATION_SETTLE_SPEED;
+      
+      // Clamp to avoid tiny values persisting
+      if (Math.abs(currentUndulationMagnitudeFactorRef.current) < 0.01) {
+        currentUndulationMagnitudeFactorRef.current = 0;
+      } else if (Math.abs(currentUndulationMagnitudeFactorRef.current - 1.0) < 0.01) {
+        currentUndulationMagnitudeFactorRef.current = 1.0;
       }
 
-      // 2. Spine: Cascade of Obedience & 3. Undulation
+      if (currentUndulationMagnitudeFactorRef.current > 0.05) { // Only advance undulation wave if actively undulating
+        undulationTimeRef.current += UNDULATION_WAVE_SPEED;
+      }
+      
+      if (headSpeed.current > 0.5) { 
+        walkPhase.current += LEG_WALK_PHASE_SPEED * (headSpeed.current / 5); 
+      }
+
       for (let i = 1; i < SEGMENT_COUNT; i++) {
         const prev = segments[i - 1];
         const current = segments[i];
         
-        // Calculate basic follow position
         const followDx = prev.x - current.x;
         const followDy = prev.y - current.y;
-        const followDist = Math.hypot(followDx, followDy);
         const followAngle = Math.atan2(followDy, followDx);
         
         let targetX = prev.x - Math.cos(followAngle) * current.length;
         let targetY = prev.y - Math.sin(followAngle) * current.length;
 
-        // Apply Undulation
         const waveProgress = (i / SEGMENT_COUNT) * Math.PI * 2 * UNDULATION_FREQUENCY - undulationTimeRef.current;
-        const undulationOffset = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * Math.sin(Math.PI * (i / (SEGMENT_COUNT -1 )) ); // Taper undulation at ends
+        // Taper undulation at ends and scale by current magnitude factor
+        const undulationTaper = Math.sin(Math.PI * (i / (SEGMENT_COUNT -1 )) ); 
+        const undulationOffset = UNDULATION_AMPLITUDE * 
+                                 Math.sin(waveProgress) * 
+                                 undulationTaper * 
+                                 currentUndulationMagnitudeFactorRef.current; 
         
-        // Apply offset perpendicular to the previous segment's angle (or a smoothed angle if available)
         const perpAngle = prev.angle + Math.PI / 2;
         targetX += undulationOffset * Math.cos(perpAngle);
         targetY += undulationOffset * Math.sin(perpAngle);
@@ -166,7 +174,6 @@ const ReptileCursor: React.FC = () => {
         current.x = targetX;
         current.y = targetY;
         
-        // Update current segment's angle to point towards the previous one (after undulation)
         const actualDx = prev.x - current.x;
         const actualDy = prev.y - current.y;
         current.angle = Math.atan2(actualDy, actualDx);
@@ -182,9 +189,8 @@ const ReptileCursor: React.FC = () => {
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [segments]); // segments ref itself doesn't change, but its contents do.
+  }, [segments]); 
 
-  // --- Drawing Helper Functions ---
   const drawHead = (ctx: CanvasRenderingContext2D, segment: Segment) => {
     ctx.save();
     ctx.translate(segment.x, segment.y);
@@ -239,36 +245,34 @@ const ReptileCursor: React.FC = () => {
     
     const baseAngle = segment.angle + Math.PI / 2; 
     const angleOffset = 1.4; 
-    const flex = angleDiff * 6; 
+    const flex = angleDiff * 6 * currentUndulationMagnitudeFactorRef.current; // Rib flex also reduces when still
 
     ctx.lineWidth = 1;
     drawSideBone(ctx, segment.x, segment.y, baseAngle - angleOffset + flex, ribLength);
     drawSideBone(ctx, segment.x, segment.y, baseAngle + Math.PI + angleOffset + flex, ribLength);
   };
 
-  const drawLeg = (ctx: CanvasRenderingContext2D, segment: Segment, segmentIndex: number, side: 1 | -1, currentWalkPhase: number, currentHeadSpeed: number) => {
-    // Determine undulation influence for this segment
+  const drawLeg = (ctx: CanvasRenderingContext2D, segment: Segment, segmentIndex: number, side: 1 | -1, currentWalkPhase: number) => {
     const waveProgress = (segmentIndex / SEGMENT_COUNT) * Math.PI * 2 * UNDULATION_FREQUENCY - undulationTimeRef.current;
-    // Taper undulation influence for legs near ends, or use full for mid-body
     const undulationInfluenceFactor = Math.sin(Math.PI * (segmentIndex / (SEGMENT_COUNT -1 )) ); 
-    const localUndulationOffset = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * undulationInfluenceFactor;
+    const localUndulationOffsetValue = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * undulationInfluenceFactor * currentUndulationMagnitudeFactorRef.current;
 
     const legPhaseOffset = (segmentIndex - LEG_START_SEGMENT_INDEX) / LEG_SEGMENT_GAP * (Math.PI / LEG_PAIRS) * 1.8;
     const legBasePhase = currentWalkPhase + legPhaseOffset;
     
-    // Modulate leg swing by local undulation (segment's current sideways offset)
-    // If undulation pushes segment to 'side', that leg reaches forward.
-    let legSwing = (localUndulationOffset / UNDULATION_AMPLITUDE) * 1.1 * side; 
-    // Add some base rhythmic swing from walkPhase as well
+    // Leg swing driven by local undulation and a base rhythmic swing
+    let legSwing = (localUndulationOffsetValue / (UNDULATION_AMPLITUDE || 1)) * 1.1 * side; 
     legSwing += Math.sin(legBasePhase) * 0.4;
-    legSwing = Math.max(-1.1, Math.min(1.1, legSwing)); // Clamp swing
+    legSwing = Math.max(-1.1, Math.min(1.1, legSwing)); 
 
     let kneeBend = (Math.cos(legBasePhase * 2) + 1) * 0.5 * 0.55 + 0.15; 
     
-    const movementFactor = Math.min(1, currentHeadSpeed / 5 ); // Normalize speed influence
+    // movementFactor is now the undulation magnitude, legs become still if body is still
+    const movementFactor = currentUndulationMagnitudeFactorRef.current; 
     
     const finalSwing = legSwing * movementFactor;
-    const finalKneeBend = kneeBend * movementFactor + (0.35 * (1-movementFactor)); // More bent when still
+    // When still (movementFactor = 0), kneeBend contribution is 0, defaults to 0.35 (resting bend)
+    const finalKneeBend = kneeBend * movementFactor + (0.35 * (1 - movementFactor)); 
 
     const thighAngle = segment.angle + (Math.PI / 2.9 + finalSwing) * side;
     const kneeX = segment.x + Math.cos(thighAngle) * THIGH_LENGTH;
@@ -301,8 +305,11 @@ const ReptileCursor: React.FC = () => {
     ctx.lineWidth = Math.max(0.8, segment.width * 0.5);
     const tipCurveAngle = Math.PI * 0.25;
     
-    drawSideBone(ctx, segment.x, segment.y, baseAngle - 0.2, boneLength, -tipCurveAngle, 1);
-    drawSideBone(ctx, segment.x, segment.y, baseAngle + Math.PI + 0.2, boneLength, tipCurveAngle, 1);
+    // Tail bones also become less splayed out if not actively undulating
+    const splayFactor = 0.2 + 0.8 * currentUndulationMagnitudeFactorRef.current;
+
+    drawSideBone(ctx, segment.x, segment.y, baseAngle - (tipCurveAngle * 0.3 * splayFactor), boneLength, -tipCurveAngle * splayFactor, 1);
+    drawSideBone(ctx, segment.x, segment.y, baseAngle + Math.PI + (tipCurveAngle * 0.3 * splayFactor), boneLength, tipCurveAngle * splayFactor, 1);
   };
 
 
@@ -325,7 +332,6 @@ const ReptileCursor: React.FC = () => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Draw spine
     for (let i = 0; i < drawableSegmentsForRender.length -1; i++) {
         const seg1 = drawableSegmentsForRender[i];
         const seg2 = drawableSegmentsForRender[i+1];
@@ -336,7 +342,6 @@ const ReptileCursor: React.FC = () => {
         ctx.stroke();
     }
     
-    // Draw details (head, ribs, legs, tail)
     let legPairCounter = 0;
     for (let i = 0; i < drawableSegmentsForRender.length; i++) {
         const seg = drawableSegmentsForRender[i];
@@ -349,15 +354,14 @@ const ReptileCursor: React.FC = () => {
         } else {
              drawDynamicRibs(ctx, seg, prevSeg, i);
             if (i >= LEG_START_SEGMENT_INDEX && (i - LEG_START_SEGMENT_INDEX) % LEG_SEGMENT_GAP === 0 && legPairCounter < LEG_PAIRS) {
-                // Pass segment index to drawLeg for undulation calculation
-                drawLeg(ctx, seg, i, 1, walkPhase.current, headSpeed.current);
-                drawLeg(ctx, seg, i, -1, walkPhase.current, headSpeed.current);
+                drawLeg(ctx, seg, i, 1, walkPhase.current);
+                drawLeg(ctx, seg, i, -1, walkPhase.current);
                 legPairCounter++;
             }
         }
     }
 
-  }, [drawableSegmentsForRender]); // Depends on the segments data for redrawing
+  }, [drawableSegmentsForRender]); 
 
   return (
     <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className="w-full h-full block" aria-label="Animated reptile cursor" role="img"/>
@@ -365,5 +369,3 @@ const ReptileCursor: React.FC = () => {
 };
 
 export default ReptileCursor;
-
-    
