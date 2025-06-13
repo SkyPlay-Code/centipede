@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Point, Segment } from '../types';
+import { Point, Segment, Particle } from '../types';
 
 // --- Configuration & Constants ---
 const SEGMENT_COUNT = 45;
@@ -47,6 +47,20 @@ const UNDULATION_AMPLITUDE = 3.5;
 const UNDULATION_FREQUENCY = 0.5; 
 const UNDULATION_WAVE_SPEED = 0.09; 
 const UNDULATION_SETTLE_SPEED = 0.15;
+const IDLE_UNDULATION_SCALE = 0.15; // How much it ripples when idle (fraction of full amplitude)
+const IDLE_UNDULATION_WAVE_SPEED = 0.02; // Slower wave speed for idle ripple
+
+// Enhancement constants
+const PARTICLE_LIFESPAN = 30; // Frames
+const PARTICLE_SPEED_FACTOR = 0.8;
+const PARTICLE_COLOR = '#AAAAAA';
+const MAX_PARTICLES = 100;
+const PARTICLE_SPAWN_THRESHOLD_SPEED = 3; // Min headSpeed to spawn particles
+
+const EYE_GLOW_PULSE_SPEED = 0.03;
+const EYE_GLOW_MIN_ALPHA = 0.2;
+const EYE_GLOW_MAX_ALPHA = 0.7;
+
 
 interface LegState {
   id: number;
@@ -73,6 +87,9 @@ const ReptileCursor: React.FC = () => {
   
   const legStatesRef = useRef<LegState[]>([]);
   const globalLegCycleTimeRef = useRef<number>(0);
+
+  const particlesRef = useRef<Particle[]>([]);
+  const eyeGlowTimeRef = useRef<number>(0);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -127,6 +144,7 @@ const ReptileCursor: React.FC = () => {
         segmentAttachIndex: segmentAttachIndex,
       });
     }
+    particlesRef.current = []; // Clear particles on re-init
     setIsInitialized(true);
   }, []);
 
@@ -135,7 +153,7 @@ const ReptileCursor: React.FC = () => {
       mousePositionRef.current = { x: event.clientX, y: event.clientY };
     };
     mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    initializeSimulation(); // Initialize once on mount
+    initializeSimulation(); 
     
     window.addEventListener('mousemove', handleMouseMove);
     
@@ -145,7 +163,7 @@ const ReptileCursor: React.FC = () => {
         canvasRef.current.height = window.innerHeight;
       }
       mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-      initializeSimulation(); // Re-initialize on resize
+      initializeSimulation(); 
     };
     window.addEventListener('resize', handleResize);
 
@@ -158,9 +176,6 @@ const ReptileCursor: React.FC = () => {
     };
   }, [initializeSimulation]);
 
-
-  // Define drawing helpers within the component scope or import if they are pure
-  // These are used by the main animation loop
   const drawHead = (ctx: CanvasRenderingContext2D, segment: Segment) => {
     ctx.save();
     ctx.translate(segment.x, segment.y);
@@ -168,6 +183,15 @@ const ReptileCursor: React.FC = () => {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = '#FFFFFF';
     
+    // Eye Glow
+    eyeGlowTimeRef.current += EYE_GLOW_PULSE_SPEED;
+    const glowAlpha = EYE_GLOW_MIN_ALPHA + (Math.sin(eyeGlowTimeRef.current) + 1) / 2 * (EYE_GLOW_MAX_ALPHA - EYE_GLOW_MIN_ALPHA);
+    ctx.fillStyle = `rgba(255, 255, 255, ${glowAlpha})`;
+    ctx.beginPath();
+    ctx.arc(EYE_SOCKET_OFFSET.x, EYE_SOCKET_OFFSET.y, EYE_SOCKET_RADIUS + 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head Outline
     ctx.beginPath();
     HEAD_POINTS.forEach((p, index) => {
         if (index === 0) ctx.moveTo(p.x, p.y);
@@ -176,6 +200,7 @@ const ReptileCursor: React.FC = () => {
     ctx.closePath();
     ctx.stroke();
 
+    // Eye Socket Outline
     ctx.beginPath();
     ctx.arc(EYE_SOCKET_OFFSET.x, EYE_SOCKET_OFFSET.y, EYE_SOCKET_RADIUS, 0, Math.PI * 2);
     ctx.lineWidth = 1;
@@ -215,7 +240,7 @@ const ReptileCursor: React.FC = () => {
     
     const baseAngle = segment.angle + Math.PI / 2; 
     const angleOffset = 1.4; 
-    const flex = angleDiff * 6 * currentUndulationMagnitudeFactorRef.current;
+    const flex = angleDiff * 6 * (currentUndulationMagnitudeFactorRef.current > 0 ? currentUndulationMagnitudeFactorRef.current : IDLE_UNDULATION_SCALE * 0.5) ;
 
     ctx.lineWidth = 1;
     drawSideBone(ctx, segment.x, segment.y, baseAngle - angleOffset + flex, ribLength);
@@ -223,6 +248,7 @@ const ReptileCursor: React.FC = () => {
   };
 
   const drawLeg = (ctx: CanvasRenderingContext2D, parentSegment: Segment, leg: LegState) => {
+    ctx.strokeStyle = '#FFFFFF'; // Ensure leg color
     ctx.lineWidth = 1.8;
     const attachX = parentSegment.x;
     const attachY = parentSegment.y;
@@ -305,12 +331,20 @@ const ReptileCursor: React.FC = () => {
     ctx.lineWidth = Math.max(0.8, segment.width * 0.5);
     const tipCurveAngle = Math.PI * 0.25;
     
-    const splayFactor = 0.2 + 0.8 * currentUndulationMagnitudeFactorRef.current;
+    const splayFactor = 0.2 + 0.8 * (currentUndulationMagnitudeFactorRef.current > 0 ? currentUndulationMagnitudeFactorRef.current : IDLE_UNDULATION_SCALE * 0.5);
 
     drawSideBone(ctx, segment.x, segment.y, baseAngle - (tipCurveAngle * 0.3 * splayFactor), boneLength, -tipCurveAngle * splayFactor, 1);
     drawSideBone(ctx, segment.x, segment.y, baseAngle + Math.PI + (tipCurveAngle * 0.3 * splayFactor), boneLength, tipCurveAngle * splayFactor, 1);
   };
 
+  const drawParticles = (ctx: CanvasRenderingContext2D) => {
+    for (const p of particlesRef.current) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(170, 170, 170, ${p.opacity})`; // PARTICLE_COLOR with alpha
+        ctx.fill();
+    }
+  };
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -318,7 +352,7 @@ const ReptileCursor: React.FC = () => {
     const mainLoop = () => {
       // --- LOGIC UPDATES ---
       const segments = segmentsRef.current;
-      if (segments.length === 0) { // Should not happen if isInitialized is true
+      if (segments.length === 0) { 
         animationFrameIdRef.current = requestAnimationFrame(mainLoop);
         return;
       }
@@ -343,15 +377,19 @@ const ReptileCursor: React.FC = () => {
       currentUndulationMagnitudeFactorRef.current += 
         (targetUndulationMagnitude - currentUndulationMagnitudeFactorRef.current) * UNDULATION_SETTLE_SPEED;
       
-      if (Math.abs(currentUndulationMagnitudeFactorRef.current) < 0.01) {
+      if (Math.abs(currentUndulationMagnitudeFactorRef.current) < 0.01 && targetUndulationMagnitude === 0.0) {
         currentUndulationMagnitudeFactorRef.current = 0;
-      } else if (Math.abs(currentUndulationMagnitudeFactorRef.current - 1.0) < 0.01) {
+      } else if (Math.abs(currentUndulationMagnitudeFactorRef.current - 1.0) < 0.01 && targetUndulationMagnitude === 1.0) {
         currentUndulationMagnitudeFactorRef.current = 1.0;
       }
 
-      if (currentUndulationMagnitudeFactorRef.current > 0.05) {
+      const isMovingSignificantly = currentUndulationMagnitudeFactorRef.current > 0.05;
+      if (isMovingSignificantly) {
         undulationTimeRef.current += UNDULATION_WAVE_SPEED;
         globalLegCycleTimeRef.current += (headSpeed.current / 15 + 0.01) * LEG_CYCLE_SPEED_SCALAR * currentUndulationMagnitudeFactorRef.current;
+      } else {
+        // Subtle idle undulation
+        undulationTimeRef.current += IDLE_UNDULATION_WAVE_SPEED;
       }
       
       for (let i = 1; i < SEGMENT_COUNT; i++) {
@@ -367,7 +405,8 @@ const ReptileCursor: React.FC = () => {
 
         const waveProgress = (i / SEGMENT_COUNT) * Math.PI * 2 * UNDULATION_FREQUENCY - undulationTimeRef.current;
         const undulationTaper = Math.sin(Math.PI * (i / (SEGMENT_COUNT -1 )) ); 
-        const undulationOffset = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * undulationTaper * currentUndulationMagnitudeFactorRef.current; 
+        const currentAmplitude = UNDULATION_AMPLITUDE * (isMovingSignificantly ? currentUndulationMagnitudeFactorRef.current : IDLE_UNDULATION_SCALE);
+        const undulationOffset = currentAmplitude * Math.sin(waveProgress) * undulationTaper;
         
         const perpAngle = prev.angle + Math.PI / 2;
         targetX += undulationOffset * Math.cos(perpAngle);
@@ -389,7 +428,7 @@ const ReptileCursor: React.FC = () => {
         leg.cyclePhase = (globalLegCycleTimeRef.current + phaseOffset) % 1.0;
 
         const wasPowerStroke = leg.isPowerStroke;
-        leg.isPowerStroke = leg.cyclePhase < POWER_STROKE_RATIO;
+        leg.isPowerStroke = leg.cyclePhase < POWER_STROKE_RATIO && isMovingSignificantly; // Legs only power stroke if moving
 
         if (leg.isPowerStroke) {
           leg.recoverySwingProgress = 0; 
@@ -402,22 +441,57 @@ const ReptileCursor: React.FC = () => {
               y: parentSegment.y + Math.sin(parentSegment.angle) * plantDistForward + Math.sin(plantAngle) * LEG_PLANT_SIDE_OFFSET,
             };
           }
+           // Particle spawning
+          if (leg.footPlantedWorldPos && headSpeed.current > PARTICLE_SPAWN_THRESHOLD_SPEED && particlesRef.current.length < MAX_PARTICLES) {
+            if(Math.random() < 0.3){ // Spawn particles less frequently
+                const numParticles = Math.random() < 0.5 ? 1 : 2;
+                for(let k=0; k<numParticles; k++){
+                    particlesRef.current.push({
+                        x: leg.footPlantedWorldPos.x + (Math.random() - 0.5) * 5,
+                        y: leg.footPlantedWorldPos.y + (Math.random() - 0.5) * 5,
+                        vx: (Math.random() - 0.5) * PARTICLE_SPEED_FACTOR - (dxHeadMove * 0.05),
+                        vy: -Math.random() * PARTICLE_SPEED_FACTOR * 1.5 - (dyHeadMove * 0.05),
+                        opacity: 0.8 + Math.random() * 0.2,
+                        lifespan: 0,
+                        maxLifespan: PARTICLE_LIFESPAN + Math.random() * 10,
+                        size: 1 + Math.random() * 1.5
+                    });
+                }
+            }
+          }
+
         } else { 
           leg.footPlantedWorldPos = null;
-          leg.recoverySwingProgress = (leg.cyclePhase - POWER_STROKE_RATIO) / (1.0 - POWER_STROKE_RATIO);
+          if (isMovingSignificantly || leg.cyclePhase >= POWER_STROKE_RATIO) { // Allow recovery swing to complete even if stopping
+            leg.recoverySwingProgress = (leg.cyclePhase - POWER_STROKE_RATIO) / (1.0 - POWER_STROKE_RATIO);
+            if (leg.cyclePhase < POWER_STROKE_RATIO && !isMovingSignificantly) { // If stopped mid-cycle but was in power stroke phase, ensure recovery is 0
+                 leg.recoverySwingProgress = 0;
+            }
+          } else { // Not moving significantly, and not in the natural recovery phase part of the cycle
+             leg.recoverySwingProgress = leg.recoverySwingProgress > 0 ? Math.max(0, leg.recoverySwingProgress - 0.1) : 0; // Slowly retract to neutral if not moving
+          }
+
         }
       }
       
+      // Update particles
+      particlesRef.current = particlesRef.current.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05; // Gravity
+        p.lifespan++;
+        p.opacity = 1 - (p.lifespan / p.maxLifespan);
+        return p.opacity > 0 && p.lifespan < p.maxLifespan;
+      });
+
       // --- DRAWING ---
       const canvas = canvasRef.current;
-      // Segments and legs refs are already updated by this point
-      
-      if (!canvas) { // No canvas available, try next frame
+      if (!canvas) {
           animationFrameIdRef.current = requestAnimationFrame(mainLoop);
           return;
       }
       const ctx = canvas.getContext('2d');
-      if (!ctx) { // No context, try next frame
+      if (!ctx) { 
           animationFrameIdRef.current = requestAnimationFrame(mainLoop);
           return;
       }
@@ -463,6 +537,8 @@ const ReptileCursor: React.FC = () => {
           }
       }
       
+      drawParticles(ctx);
+      
       animationFrameIdRef.current = requestAnimationFrame(mainLoop);
     };
 
@@ -472,7 +548,7 @@ const ReptileCursor: React.FC = () => {
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [isInitialized]); // Removed drawing helpers from deps as they are stable in this scope or use refs
+  }, [isInitialized]); 
 
   return (
     <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className="w-full h-full block" aria-label="Animated centipede cursor" role="img"/>

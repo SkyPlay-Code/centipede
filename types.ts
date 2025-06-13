@@ -11,4 +11,15 @@ export interface Segment { // Updated for kinematic chain
   width: number;  // Current width for drawing the spine
 }
 
+export interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  opacity: number;
+  lifespan: number;
+  maxLifespan: number;
+  size: number;
+}
+
 // Leg and LegTip types are removed as leg geometry will be calculated procedurally.
