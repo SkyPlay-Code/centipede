@@ -7,21 +7,21 @@ const SEGMENT_COUNT = 45;
 const BASE_SEGMENT_LENGTH = 9;
 
 // Leg properties
-const LEG_PAIRS = 7; // Increased pairs for more centipede-like look
-const LEG_START_SEGMENT_INDEX = 8; // Adjusted start
-const LEG_SEGMENT_GAP = 3;         // Reduced gap for denser legs
+const LEG_PAIRS = 7; 
+const LEG_START_SEGMENT_INDEX = 8; 
+const LEG_SEGMENT_GAP = 3;         
 const THIGH_LENGTH = 18;
 const CALF_LENGTH = 16;
 const FOOT_LENGTH = 7;
 
 const LEG_CYCLE_SPEED_SCALAR = 0.08;
-const POWER_STROKE_RATIO = 0.65; // 65% of cycle is power stroke
-const METACHRONAL_WAVE_FACTOR = 6.0; // Higher values = more waves along body; positive means tail legs lead cycle (lift first)
+const POWER_STROKE_RATIO = 0.65; 
+const METACHRONAL_WAVE_FACTOR = 6.0; 
 
 const LEG_RECOVERY_LIFT_HEIGHT = 15;
-const LEG_RECOVERY_SWING_FORWARD_FACTOR = 1.2; // How much leg swings ahead during recovery
-const LEG_PLANT_FORWARD_OFFSET = 10; // How far ahead leg aims to plant
-const LEG_PLANT_SIDE_OFFSET = 15;   // How far to the side leg aims to plant
+const LEG_RECOVERY_SWING_FORWARD_FACTOR = 1.2; 
+const LEG_PLANT_FORWARD_OFFSET = 10; 
+const LEG_PLANT_SIDE_OFFSET = 15;   
 
 // Body features
 const NECK_TAPER_SEGMENTS = 10;
@@ -106,7 +106,6 @@ const ReptileCursor: React.FC = () => {
       const segmentAttachIndex = LEG_START_SEGMENT_INDEX + i * LEG_SEGMENT_GAP;
       if (segmentAttachIndex >= SEGMENT_COUNT) break;
       
-      // Right leg
       legStatesRef.current.push({
         id: legIdCounter++,
         pairIndex: i,
@@ -117,12 +116,11 @@ const ReptileCursor: React.FC = () => {
         recoverySwingProgress: 0,
         segmentAttachIndex: segmentAttachIndex,
       });
-      // Left leg
       legStatesRef.current.push({
         id: legIdCounter++,
         pairIndex: i,
         side: -1,
-        cyclePhase: 0, // Initial phase will be staggered by METACHRONAL_WAVE_FACTOR
+        cyclePhase: 0, 
         isPowerStroke: false,
         footPlantedWorldPos: null,
         recoverySwingProgress: 0,
@@ -137,7 +135,8 @@ const ReptileCursor: React.FC = () => {
       mousePositionRef.current = { x: event.clientX, y: event.clientY };
     };
     mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    initializeSimulation();
+    initializeSimulation(); // Initialize once on mount
+    
     window.addEventListener('mousemove', handleMouseMove);
     
     const handleResize = () => {
@@ -146,7 +145,7 @@ const ReptileCursor: React.FC = () => {
         canvasRef.current.height = window.innerHeight;
       }
       mousePositionRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-      initializeSimulation(); 
+      initializeSimulation(); // Re-initialize on resize
     };
     window.addEventListener('resize', handleResize);
 
@@ -160,115 +159,8 @@ const ReptileCursor: React.FC = () => {
   }, [initializeSimulation]);
 
 
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const updateReptileLogic = () => {
-      const segments = segmentsRef.current;
-      if (segments.length === 0) return;
-
-      const target = mousePositionRef.current;
-      const headSegment = segments[0];
-
-      const prevHeadX = headSegment.x;
-      const prevHeadY = headSegment.y;
-
-      headSegment.x = target.x;
-      headSegment.y = target.y;
-      
-      const dxHeadMove = headSegment.x - prevHeadX;
-      const dyHeadMove = headSegment.y - prevHeadY;
-      headSpeed.current = Math.hypot(dxHeadMove, dyHeadMove);
-
-      if (headSpeed.current > 0.1) { 
-        headSegment.angle = Math.atan2(dyHeadMove, dxHeadMove);
-      }
-
-      const targetUndulationMagnitude = headSpeed.current > 0.5 ? 1.0 : 0.0;
-      currentUndulationMagnitudeFactorRef.current += 
-        (targetUndulationMagnitude - currentUndulationMagnitudeFactorRef.current) * UNDULATION_SETTLE_SPEED;
-      
-      if (Math.abs(currentUndulationMagnitudeFactorRef.current) < 0.01) {
-        currentUndulationMagnitudeFactorRef.current = 0;
-      } else if (Math.abs(currentUndulationMagnitudeFactorRef.current - 1.0) < 0.01) {
-        currentUndulationMagnitudeFactorRef.current = 1.0;
-      }
-
-      if (currentUndulationMagnitudeFactorRef.current > 0.05) {
-        undulationTimeRef.current += UNDULATION_WAVE_SPEED;
-        globalLegCycleTimeRef.current += (headSpeed.current / 15 + 0.01) * LEG_CYCLE_SPEED_SCALAR * currentUndulationMagnitudeFactorRef.current;
-      }
-      
-      for (let i = 1; i < SEGMENT_COUNT; i++) {
-        const prev = segments[i - 1];
-        const current = segments[i];
-        
-        const followDx = prev.x - current.x;
-        const followDy = prev.y - current.y;
-        const followAngle = Math.atan2(followDy, followDx);
-        
-        let targetX = prev.x - Math.cos(followAngle) * current.length;
-        let targetY = prev.y - Math.sin(followAngle) * current.length;
-
-        const waveProgress = (i / SEGMENT_COUNT) * Math.PI * 2 * UNDULATION_FREQUENCY - undulationTimeRef.current;
-        const undulationTaper = Math.sin(Math.PI * (i / (SEGMENT_COUNT -1 )) ); 
-        const undulationOffset = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * undulationTaper * currentUndulationMagnitudeFactorRef.current; 
-        
-        const perpAngle = prev.angle + Math.PI / 2;
-        targetX += undulationOffset * Math.cos(perpAngle);
-        targetY += undulationOffset * Math.sin(perpAngle);
-        
-        current.x = targetX;
-        current.y = targetY;
-        
-        const actualDx = prev.x - current.x;
-        const actualDy = prev.y - current.y;
-        current.angle = Math.atan2(actualDy, actualDx);
-      }
-
-      // Update leg states
-      for (const leg of legStatesRef.current) {
-        const parentSegment = segments[leg.segmentAttachIndex];
-        if (!parentSegment) continue;
-
-        // Calculate leg's phase in the metachronal wave
-        // Positive METACHRONAL_WAVE_FACTOR makes tail legs lead (lift first)
-        const phaseOffset = (leg.segmentAttachIndex / SEGMENT_COUNT) * METACHRONAL_WAVE_FACTOR;
-        leg.cyclePhase = (globalLegCycleTimeRef.current + phaseOffset) % 1.0;
-
-        const wasPowerStroke = leg.isPowerStroke;
-        leg.isPowerStroke = leg.cyclePhase < POWER_STROKE_RATIO;
-
-        if (leg.isPowerStroke) {
-          leg.recoverySwingProgress = 0; // Reset recovery progress
-          if (!wasPowerStroke) { // Just started power stroke, need to plant foot
-            const plantAngle = parentSegment.angle + (Math.PI / 2 * leg.side * 0.6); // Angle to plant foot side
-            const plantDistForward = LEG_PLANT_FORWARD_OFFSET * (0.5 + headSpeed.current * 0.05); // Plant further if moving fast
-            
-            leg.footPlantedWorldPos = {
-              x: parentSegment.x + Math.cos(parentSegment.angle) * plantDistForward + Math.cos(plantAngle) * LEG_PLANT_SIDE_OFFSET,
-              y: parentSegment.y + Math.sin(parentSegment.angle) * plantDistForward + Math.sin(plantAngle) * LEG_PLANT_SIDE_OFFSET,
-            };
-          }
-          // Foot remains planted at leg.footPlantedWorldPos
-        } else { // Recovery stroke
-          leg.footPlantedWorldPos = null;
-          // Calculate progress through the recovery stroke (0 to 1)
-          leg.recoverySwingProgress = (leg.cyclePhase - POWER_STROKE_RATIO) / (1.0 - POWER_STROKE_RATIO);
-        }
-      }
-      
-      animationFrameIdRef.current = requestAnimationFrame(updateReptileLogic);
-    };
-
-    animationFrameIdRef.current = requestAnimationFrame(updateReptileLogic);
-    return () => {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-      }
-    };
-  }, [isInitialized]); 
-
+  // Define drawing helpers within the component scope or import if they are pure
+  // These are used by the main animation loop
   const drawHead = (ctx: CanvasRenderingContext2D, segment: Segment) => {
     ctx.save();
     ctx.translate(segment.x, segment.y);
@@ -337,7 +229,6 @@ const ReptileCursor: React.FC = () => {
     let kneeX, kneeY, footX, footY;
 
     if (leg.isPowerStroke && leg.footPlantedWorldPos) {
-        // Power Stroke: Foot is planted, body moves over it
         footX = leg.footPlantedWorldPos.x;
         footY = leg.footPlantedWorldPos.y;
 
@@ -346,49 +237,43 @@ const ReptileCursor: React.FC = () => {
         const distToFoot = Math.hypot(dx, dy);
         const angleToFoot = Math.atan2(dy, dx);
 
-        // Simple IK for knee: form a triangle, ensure leg segments can reach
         const L1 = THIGH_LENGTH;
         const L2 = CALF_LENGTH;
-        if (distToFoot > L1 + L2 - 0.1) { // Almost fully extended
+        if (distToFoot >= L1 + L2 - 0.1) { 
             const ratio = L1 / (L1 + L2);
             kneeX = attachX + dx * ratio;
             kneeY = attachY + dy * ratio;
-        } else if (distToFoot < Math.abs(L1 - L2) + 0.1) { // Too close, almost folded (unlikely with good plant)
-             const ratio = L1 / (L1 - L2 || L1); // Avoid div by zero if L1=L2
+        } else if (distToFoot <= Math.abs(L1 - L2) + 0.1) { 
+             const ratio = L1 / (L1 - L2 || L1); 
              kneeX = attachX + dx * ratio;
              kneeY = attachY + dy * ratio;
         }else {
-            const angleOffset = Math.acos((L1*L1 + distToFoot*distToFoot - L2*L2) / (2 * L1 * distToFoot));
-            const kneeAngle = angleToFoot + angleOffset * leg.side; // Bend knee outwards
+            const angleOffsetVal = Math.acos(Math.min(1, Math.max(-1, (L1*L1 + distToFoot*distToFoot - L2*L2) / (2 * L1 * distToFoot))));
+            const kneeAngle = angleToFoot + angleOffsetVal * leg.side; 
             kneeX = attachX + L1 * Math.cos(kneeAngle);
             kneeY = attachY + L1 * Math.sin(kneeAngle);
         }
 
     } else {
-        // Recovery Stroke: Foot is airborne, swinging
-        const swingPhase = leg.recoverySwingProgress; // 0 to 1
+        const swingPhase = leg.recoverySwingProgress; 
         
-        // Parabolic arc for swing: lift, forward, down
-        const lift = Math.sin(swingPhase * Math.PI) * LEG_RECOVERY_LIFT_HEIGHT; // Max lift at midpoint
+        const lift = Math.sin(swingPhase * Math.PI) * LEG_RECOVERY_LIFT_HEIGHT; 
         const forwardReach = swingPhase * LEG_RECOVERY_SWING_FORWARD_FACTOR * (THIGH_LENGTH + CALF_LENGTH) * 0.6;
         
-        // Base direction of swing: parent segment's angle + side offset
-        const baseSwingAngle = parentSegment.angle + (leg.side * Math.PI / 4); // Swing slightly outwards
+        const baseSwingAngle = parentSegment.angle + (leg.side * Math.PI / 4); 
 
         const footRelX = Math.cos(baseSwingAngle) * forwardReach;
-        const footRelY = Math.sin(baseSwingAngle) * forwardReach - lift; // Subtract lift
+        const footRelY = Math.sin(baseSwingAngle) * forwardReach - lift; 
 
         footX = attachX + footRelX;
         footY = attachY + footRelY;
 
-        // Simplified knee for airborne leg
         const angleToAirFoot = Math.atan2(footY - attachY, footX - attachX);
-        const distToAirFoot = Math.hypot(footX - attachX, footY - attachY);
-        const baseKneeAngle = angleToAirFoot + (Math.PI / 3 * leg.side * (1-swingPhase*0.5)); // Bend knee more at start of swing
+        const baseKneeAngle = angleToAirFoot + (Math.PI / 3 * leg.side * (1-swingPhase*0.5)); 
         
         kneeX = attachX + THIGH_LENGTH * Math.cos(baseKneeAngle);
         kneeY = attachY + THIGH_LENGTH * Math.sin(baseKneeAngle);
-        // Ensure calf can reach footX, footY from this kneeX, kneeY or adjust
+        
          const distKneeToFoot = Math.hypot(footX - kneeX, footY - kneeY);
          if (distKneeToFoot > CALF_LENGTH) {
             const scale = CALF_LENGTH / distKneeToFoot;
@@ -427,59 +312,167 @@ const ReptileCursor: React.FC = () => {
   };
 
 
-  useEffect(() => { 
+  useEffect(() => {
     if (!isInitialized) return;
-    const canvas = canvasRef.current;
-    const segments = segmentsRef.current;
-    if (!canvas || segments.length === 0) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
+    const mainLoop = () => {
+      // --- LOGIC UPDATES ---
+      const segments = segmentsRef.current;
+      if (segments.length === 0) { // Should not happen if isInitialized is true
+        animationFrameIdRef.current = requestAnimationFrame(mainLoop);
+        return;
+      }
 
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const target = mousePositionRef.current;
+      const headSegment = segments[0];
+      const prevHeadX = headSegment.x;
+      const prevHeadY = headSegment.y;
 
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+      headSegment.x = target.x;
+      headSegment.y = target.y;
+      
+      const dxHeadMove = headSegment.x - prevHeadX;
+      const dyHeadMove = headSegment.y - prevHeadY;
+      headSpeed.current = Math.hypot(dxHeadMove, dyHeadMove);
 
-    for (let i = 0; i < segments.length -1; i++) {
-        const seg1 = segments[i];
-        const seg2 = segments[i+1];
-        ctx.beginPath();
-        ctx.moveTo(seg1.x, seg1.y);
-        ctx.lineTo(seg2.x, seg2.y);
-        ctx.lineWidth = Math.max(1, seg1.width); 
-        ctx.stroke();
-    }
-    
-    for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        const prevSeg = i > 0 ? segments[i-1] : null;
+      if (headSpeed.current > 0.1) { 
+        headSegment.angle = Math.atan2(dyHeadMove, dxHeadMove);
+      }
+
+      const targetUndulationMagnitude = headSpeed.current > 0.5 ? 1.0 : 0.0;
+      currentUndulationMagnitudeFactorRef.current += 
+        (targetUndulationMagnitude - currentUndulationMagnitudeFactorRef.current) * UNDULATION_SETTLE_SPEED;
+      
+      if (Math.abs(currentUndulationMagnitudeFactorRef.current) < 0.01) {
+        currentUndulationMagnitudeFactorRef.current = 0;
+      } else if (Math.abs(currentUndulationMagnitudeFactorRef.current - 1.0) < 0.01) {
+        currentUndulationMagnitudeFactorRef.current = 1.0;
+      }
+
+      if (currentUndulationMagnitudeFactorRef.current > 0.05) {
+        undulationTimeRef.current += UNDULATION_WAVE_SPEED;
+        globalLegCycleTimeRef.current += (headSpeed.current / 15 + 0.01) * LEG_CYCLE_SPEED_SCALAR * currentUndulationMagnitudeFactorRef.current;
+      }
+      
+      for (let i = 1; i < SEGMENT_COUNT; i++) {
+        const prev = segments[i - 1];
+        const current = segments[i];
         
-        if (i === 0) {
-            drawHead(ctx, seg);
-        } else if (i >= TAIL_BONE_START_INDEX) {
-            drawTailBones(ctx, seg, i);
-        } else {
-             drawDynamicRibs(ctx, seg, prevSeg, i);
-        }
-    }
-    // Draw legs
-    for (const leg of legStatesRef.current) {
+        const followDx = prev.x - current.x;
+        const followDy = prev.y - current.y;
+        const followAngle = Math.atan2(followDy, followDx);
+        
+        let targetX = prev.x - Math.cos(followAngle) * current.length;
+        let targetY = prev.y - Math.sin(followAngle) * current.length;
+
+        const waveProgress = (i / SEGMENT_COUNT) * Math.PI * 2 * UNDULATION_FREQUENCY - undulationTimeRef.current;
+        const undulationTaper = Math.sin(Math.PI * (i / (SEGMENT_COUNT -1 )) ); 
+        const undulationOffset = UNDULATION_AMPLITUDE * Math.sin(waveProgress) * undulationTaper * currentUndulationMagnitudeFactorRef.current; 
+        
+        const perpAngle = prev.angle + Math.PI / 2;
+        targetX += undulationOffset * Math.cos(perpAngle);
+        targetY += undulationOffset * Math.sin(perpAngle);
+        
+        current.x = targetX;
+        current.y = targetY;
+        
+        const actualDx = prev.x - current.x;
+        const actualDy = prev.y - current.y;
+        current.angle = Math.atan2(actualDy, actualDx);
+      }
+
+      for (const leg of legStatesRef.current) {
         const parentSegment = segments[leg.segmentAttachIndex];
-        if (parentSegment) {
-            drawLeg(ctx, parentSegment, leg);
+        if (!parentSegment) continue;
+
+        const phaseOffset = (leg.segmentAttachIndex / SEGMENT_COUNT) * METACHRONAL_WAVE_FACTOR;
+        leg.cyclePhase = (globalLegCycleTimeRef.current + phaseOffset) % 1.0;
+
+        const wasPowerStroke = leg.isPowerStroke;
+        leg.isPowerStroke = leg.cyclePhase < POWER_STROKE_RATIO;
+
+        if (leg.isPowerStroke) {
+          leg.recoverySwingProgress = 0; 
+          if (!wasPowerStroke) { 
+            const plantAngle = parentSegment.angle + (Math.PI / 2 * leg.side * 0.6); 
+            const plantDistForward = LEG_PLANT_FORWARD_OFFSET * (0.5 + headSpeed.current * 0.05); 
+            
+            leg.footPlantedWorldPos = {
+              x: parentSegment.x + Math.cos(parentSegment.angle) * plantDistForward + Math.cos(plantAngle) * LEG_PLANT_SIDE_OFFSET,
+              y: parentSegment.y + Math.sin(parentSegment.angle) * plantDistForward + Math.sin(plantAngle) * LEG_PLANT_SIDE_OFFSET,
+            };
+          }
+        } else { 
+          leg.footPlantedWorldPos = null;
+          leg.recoverySwingProgress = (leg.cyclePhase - POWER_STROKE_RATIO) / (1.0 - POWER_STROKE_RATIO);
         }
-    }
+      }
+      
+      // --- DRAWING ---
+      const canvas = canvasRef.current;
+      // Segments and legs refs are already updated by this point
+      
+      if (!canvas) { // No canvas available, try next frame
+          animationFrameIdRef.current = requestAnimationFrame(mainLoop);
+          return;
+      }
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { // No context, try next frame
+          animationFrameIdRef.current = requestAnimationFrame(mainLoop);
+          return;
+      }
+    
+      if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+      }
 
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  }, [isInitialized, segmentsRef.current, legStatesRef.current, globalLegCycleTimeRef.current]); // Depends on drawable segments and leg states
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (let i = 0; i < segments.length -1; i++) {
+          const seg1 = segments[i];
+          const seg2 = segments[i+1];
+          ctx.beginPath();
+          ctx.moveTo(seg1.x, seg1.y);
+          ctx.lineTo(seg2.x, seg2.y);
+          ctx.lineWidth = Math.max(1, seg1.width); 
+          ctx.stroke();
+      }
+    
+      for (let i = 0; i < segments.length; i++) {
+          const seg = segments[i];
+          const prevSeg = i > 0 ? segments[i-1] : null;
+        
+          if (i === 0) {
+              drawHead(ctx, seg);
+          } else if (i >= TAIL_BONE_START_INDEX) {
+              drawTailBones(ctx, seg, i);
+          } else {
+               drawDynamicRibs(ctx, seg, prevSeg, i);
+          }
+      }
+      for (const leg of legStatesRef.current) {
+          const parentSegment = segments[leg.segmentAttachIndex];
+          if (parentSegment) {
+              drawLeg(ctx, parentSegment, leg);
+          }
+      }
+      
+      animationFrameIdRef.current = requestAnimationFrame(mainLoop);
+    };
+
+    animationFrameIdRef.current = requestAnimationFrame(mainLoop);
+    return () => {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+    };
+  }, [isInitialized]); // Removed drawing helpers from deps as they are stable in this scope or use refs
 
   return (
     <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className="w-full h-full block" aria-label="Animated centipede cursor" role="img"/>
@@ -487,4 +480,3 @@ const ReptileCursor: React.FC = () => {
 };
 
 export default ReptileCursor;
-
