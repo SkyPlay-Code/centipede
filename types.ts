@@ -1,24 +1,14 @@
-
 export interface Point {
   x: number;
   y: number;
 }
 
-export interface Segment extends Point { // Segment is a point with velocity
-  vx: number;
-  vy: number;
+export interface Segment { // Updated for kinematic chain
+  x: number;
+  y: number;
+  angle: number;
+  length: number; // Base length of the segment
+  width: number;  // Current width for drawing the spine
 }
 
-export interface LegTip extends Point { // LegTip is also a point with velocity
-  vx: number;
-  vy: number;
-}
-
-export interface Leg {
-  attachSegmentIndex: number;
-  side: 'left' | 'right';
-  length: number;
-  angleFromSegment: number; // Resting angle relative to segment's forward direction in radians
-  tip: LegTip; 
-  phase: number; // For animation cycling
-}
+// Leg and LegTip types are removed as leg geometry will be calculated procedurally.
